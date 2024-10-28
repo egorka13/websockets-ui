@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
-import { generateRoomId } from './utils';
+import { generateId, generateRoomId } from './utils';
+import { broadcast } from './websocketHandlers';
 
 export interface Position {
   x: number;
@@ -28,6 +29,15 @@ export interface GameRoom {
 // All active game rooms are stored here
 export const rooms: GameRoom[] = [];
 
+// Store all players
+export const players: Player[] = [];
+
+export function registerUser(username: string, ws: WebSocket): string {
+  const playerId = generateId();
+  players.push({ id: playerId, ws, ships: [], board: [] });
+  return playerId;
+}
+
 export function createRoom(playerId: string, ws: WebSocket): GameRoom {
   const room: GameRoom = {
     id: generateRoomId(),
@@ -39,6 +49,18 @@ export function createRoom(playerId: string, ws: WebSocket): GameRoom {
   };
   rooms.push(room);
   return room;
+}
+
+export function addUserToRoom(roomId: string, playerId: string): boolean {
+  const room = rooms.find((r) => r.id === roomId);
+  if (!room || room.players.length >= 2) return false;
+
+  room.players.push(getPlayer(playerId));
+  if (room.players.length === 2) {
+    room.status = 'inProgress';
+    startGame(room);
+  }
+  return true;
 }
 
 export function joinRoom(
@@ -63,6 +85,11 @@ export function joinRoom(
   );
 
   return room;
+}
+
+export function startGame(room: GameRoom) {
+  // Notify players that the game has started
+  broadcast(room, { type: 'gameStart', roomId: room.id });
 }
 
 export function placeShip(
@@ -141,4 +168,52 @@ export function makeMove(
   } else {
     return 'invalidMove'; // Cell was already targeted
   }
+}
+
+export function addShips(playerId: string, roomId: string, ships: Ship[]) {
+  const room = rooms.find((r) => r.id === roomId);
+  const player = room?.players.find((p) => p.id === playerId);
+  if (player) player.ships = ships;
+}
+
+export function turn(roomId: string) {
+  const room = rooms.find((r) => r.id === roomId);
+  if (!room) return;
+
+  // Toggle turn between the two players
+  room.turn = room.players.find((p) => p.id !== room.turn)?.id!;
+  broadcast(room, { type: 'turn', playerId: room.turn });
+}
+
+export function randomAttack(roomId: string, playerId: string) {
+  const room = rooms.find((r) => r.id === roomId);
+  if (!room) return;
+
+  const opponent = room.players.find((p) => p.id !== playerId);
+  if (!opponent) return;
+
+  // Generate random coordinates for attack
+  const x = Math.floor(Math.random() * 10);
+  const y = Math.floor(Math.random() * 10);
+
+  makeMove(roomId, playerId, x, y);
+}
+
+export function finish(roomId: string, winnerId: string) {
+  updateRoom(roomId, 'finished');
+  const room = rooms.find((r) => r.id === roomId);
+  if (room) {
+    broadcast(room, { type: 'gameOver', winner: winnerId });
+  }
+}
+
+// Utility function to find a player by ID
+function getPlayer(playerId: string): Player {
+  return players.find((p) => p.id === playerId) as Player;
+}
+
+// Update room status to finished
+export function updateRoom(roomId: string, status: 'finished') {
+  const room = rooms.find((r) => r.id === roomId);
+  if (room) room.status = status;
 }
