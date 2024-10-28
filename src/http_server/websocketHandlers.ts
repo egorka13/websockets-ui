@@ -1,13 +1,64 @@
 import WebSocket from 'ws';
 import {
+  addUserToRoom,
   createRoom,
+  finish,
   GameRoom,
   joinRoom,
   makeMove,
   placeShip,
+  randomAttack,
+  registerUser,
   rooms,
   Ship,
+  startGame,
 } from './game';
+
+export function handleRegistration(ws: WebSocket, data: { username: string }) {
+  const playerId = registerUser(data.username, ws);
+  ws.send(JSON.stringify({ type: 'regSuccess', playerId }));
+}
+
+export function handleCreateRoom(ws: WebSocket, data: { playerId: string }) {
+  const room = createRoom(data.playerId, ws);
+  ws.send(JSON.stringify({ type: 'roomCreated', roomId: room.id }));
+}
+
+export function handleAddUserToRoom(
+  ws: WebSocket,
+  data: { playerId: string; roomId: string }
+) {
+  const success = addUserToRoom(data.roomId, data.playerId);
+  ws.send(
+    JSON.stringify({
+      type: success ? 'roomJoined' : 'error',
+      message: success ? 'Room joined' : 'Room full or not found',
+    })
+  );
+}
+
+export function handleStartGame(ws: WebSocket, data: { roomId: string }) {
+  const room = rooms.find((r) => r.id === data.roomId);
+  if (room && room.players.length === 2) {
+    startGame(room);
+  } else {
+    ws.send(JSON.stringify({ type: 'error', message: 'Not enough players' }));
+  }
+}
+
+export function handleRandomAttack(
+  ws: WebSocket,
+  data: { playerId: string; roomId: string }
+) {
+  randomAttack(data.roomId, data.playerId);
+}
+
+export function handleFinish(
+  ws: WebSocket,
+  data: { roomId: string; winnerId: string }
+) {
+  finish(data.roomId, data.winnerId);
+}
 
 export function handleJoinRoom(
   ws: WebSocket,
